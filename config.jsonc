@@ -1,0 +1,7 @@
+  "custom/bitpanda": {
+      "exec": "python3 ~/.config/wayland/run/bitpanda.py",
+      "on-click": "python3 ~/.config/wayland/run/bitpanda.py",
+      "interval": 60,
+      "return-type": "json",
+      "format": "   {}"
+  },
