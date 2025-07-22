@@ -22,7 +22,6 @@ header = {
     }
 
 def __init__():
-
     ram_access = False
     config = configparser.ConfigParser()
     config_path = os.getcwd() + "/config_bitpanda.ini"
@@ -100,7 +99,6 @@ def update():
 
 
 def create_request(session, endpoint, path, method, signer = ""):
-
     full_path = f"{endpoint}{path}?{urlencode}"
     raw_url = f"{path}?{urlencode}"
     request = requests.Request(method=method, url=full_path).prepare()
@@ -136,6 +134,7 @@ class Bitpanda:
                 for kx, vx in v.items():
                     try:
                         exchange_rate = json_ticker[kx][target_currency]
+                        self.total += float(vx) * float(exchange_rate) 
                         if debug == True:
                             print(f'{kx}:{float(vx) * float(exchange_rate)}')
                         if waybar == True:
@@ -144,12 +143,11 @@ class Bitpanda:
                                 self.wcs_space = len(kx)
                             if len(self.waybar_tooltip[kx][0]) > self.wvar_space:
                                 self.wvar_space = len(self.waybar_tooltip[kx][0])
-                            
                     except:
                         print(f"Error: „{target_currency}\" currency not available.")
                         exit()
 
-                    self.total += float(vx) * float(exchange_rate) 
+                    
 
     def parse_fiat_wallet(self, json_data, total_balance):
         total_balance["fiat_wallet"] = {}
@@ -211,10 +209,7 @@ def prepare_waybar_tooltip(name, total, waybar_tooltip, waybar, wcs_space, wvar_
 
 class KuCoin:
     def __init__(self, api_key: str, api_secret: str, api_passphrase: str):
-        """
-        KcSigner contains information about ‘apiKey’, ‘apiSecret’, ‘apiPassPhrase’
-        and provides methods to sign and generate headers for API requests.
-        """
+        # ref https://www.kucoin.com/docs-new/authentication
         self.api_key = api_key or ""
         self.api_secret = api_secret or ""
         self.api_passphrase = api_passphrase or ""
@@ -230,10 +225,6 @@ class KuCoin:
         return base64.b64encode(hm.digest()).decode()
 
     def headers(self, plain: str) -> dict:
-        """
-        Headers method generates and returns a map of signature headers needed for API authorization
-        It takes a plain string as an argument to help form the signature. The outputs are a set of API headers.
-        """
         timestamp = str(int(time.time() * 1000))
         signature = self.sign((timestamp + plain).encode('utf-8'), self.api_secret.encode('utf-8'))
 
@@ -256,7 +247,7 @@ if __name__ == "__main__":
 
     api_key, target_currency, waybar = __init__()
     
-    signer = KuCoin("687ff1a9dffe710001e65ce3", "35106d0f-02ec-4356-b840-532b4cd0e7b2", "Ue.E$\\gT)\\i&vS[os\\ln")
+    signer = KuCoin("", "", "")
 
     session = requests.Session()
     bp_data = Bitpanda(session, api_key, target_currency, waybar)
