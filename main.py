@@ -28,8 +28,8 @@ def __init__():
     if os.path.isfile("/dev/shm/config_bitpanda.ini") == True:
         ram_access = True
     else:
-        if os.path.isfile(config_path) == False:
-            import shutil
+        import shutil
+        if os.path.isfile(config_path) == False: 
             print("Setup Bitpanda Configuration\n")
             api_key = str(input("API-KEY: "))
             if not api_key:
@@ -69,6 +69,9 @@ def __init__():
                 shutil.copy(os.getcwd() + "/config_bitpanda.ini", "/dev/shm/config_bitpanda.ini")
             except:
                 pass
+        
+        else:
+            shutil.copy(config_path, "/dev/shm/config_bitpanda.ini")
 
     if ram_access == True:
         config.read("/dev/shm/config_bitpanda.ini")
@@ -98,17 +101,18 @@ def update():
     exit()
 
 
-def create_request(session, endpoint, path, method, signer = ""):
+def create_request(session, endpoint, path, method, exchanger = ""):
     full_path = f"{endpoint}{path}?{urlencode}"
     raw_url = f"{path}?{urlencode}"
     request = requests.Request(method=method, url=full_path).prepare()
     
-    if signer:
-        payload = method + raw_url
-        headers = signer.headers(payload)
-        request.headers.update(headers)
-    else:
+    if isinstance(exchanger, str) and "Bitpanda" in exchanger:
         request.headers.update(header)
+
+    elif isinstance(exchanger, KuCoin):
+        payload = method + raw_url
+        headers = exchanger.headers(payload)
+        request.headers.update(headers)
 
     send_request = session.send(request)
     json_data = json.loads(send_request.content)
@@ -116,11 +120,12 @@ def create_request(session, endpoint, path, method, signer = ""):
 
 class Bitpanda:
     def __init__(self, session, api_key, target_currency, waybar):
+        global json_ticker
         total_balance = {}
         self.total = 0
-        json_asset_wallet = create_request(session, "https://api.bitpanda.com", "/v1/asset-wallets", "GET")
-        json_fiat_wallet = create_request(session, "https://api.bitpanda.com", "/v1/fiatwallets", "GET")
-        json_ticker = create_request(session, "https://api.bitpanda.com", "/v2/ticker", "GET")
+        json_asset_wallet = create_request(session, "https://api.bitpanda.com", "/v1/asset-wallets", "GET", "Bitpanda")
+        json_fiat_wallet = create_request(session, "https://api.bitpanda.com", "/v1/fiatwallets", "GET", "Bitpanda")
+        json_ticker = create_request(session, "https://api.bitpanda.com", "/v2/ticker", "GET", "Bitpanda")
         json_ticker = self.prepare_ticker(json_ticker)
         self.parse_fiat_wallet(json_fiat_wallet, total_balance)
         self.parse_asset_wallet(json_asset_wallet, total_balance)
@@ -155,7 +160,7 @@ class Bitpanda:
             if float(item["attributes"]["balance"]) != 0.0 and item:
                 total_balance["fiat_wallet"][item["attributes"]["fiat_symbol"]] = item["attributes"]["balance"]
 
-    def prepare_ticker(self, json_ticker):
+    def prepare_ticker(self, json_ticker):        
         json_ticker["EUR"] = json_ticker["BCPEUR"]
         json_ticker["USD"] = json_ticker["BCPUSD"]
         json_ticker["GBP"] = json_ticker["BCPGBP"]
@@ -208,17 +213,52 @@ def prepare_waybar_tooltip(name, total, waybar_tooltip, waybar, wcs_space, wvar_
         print(f'₿ : {round(total, 2)} {target_currency}')
 
 class KuCoin:
-    def __init__(self, api_key: str, api_secret: str, api_passphrase: str):
+    def __init__(self, session, api_key: str, api_secret: str, api_passphrase: str):
         # ref https://www.kucoin.com/docs-new/authentication
+        self.session = session or ""
         self.api_key = api_key or ""
         self.api_secret = api_secret or ""
         self.api_passphrase = api_passphrase or ""
+        self.ku_account_balance = {}
+        self.ku_waybar_tooltip = {}
 
         if api_passphrase and api_secret:
             self.api_passphrase = self.sign(api_passphrase.encode('utf-8'), api_secret.encode('utf-8'))
+            #self.json_data = create_request(session, "https://api.kucoin.com", "/api/v1/accounts/", "GET", self)
+            self.fetch_account_balance()
+            self.compare_ticker_with_account_balance()
 
         if not all([api_key, api_secret, api_passphrase]):
             print("API token is empty. Access is restricted to public interfaces only.")
+    
+    def fetch_account_balance(self):
+        json_account_data = self.request("/api/v1/accounts/")
+        for x in json_account_data["data"]:
+            if int(x["balance"]) > 0:
+                self.ku_account_balance[x["currency"]] = [x["balance"]]
+
+    def compare_ticker_with_account_balance(self):
+        json_ticker_data = self.request("/api/v1/market/allTickers")
+        for y in self.ku_account_balance.keys():
+            for x in json_ticker_data["data"]["ticker"]:
+                if y in x["symbol"]:
+                    for z in currencies:
+                        if z in x["symbol"]:
+                            currency = z
+                    else:
+                        if "BTC" in x["symbol"]:
+                            currency = "BTC"
+                    if currency:
+                        self.ku_account_balance[y].append(f'[{x["symbol"]}, {currency}, {x["sell"]}, {x["vol"]}]')
+        
+        #There are multiple tickers; we fetch those with the highest volume. Initially, we convert the ticker currency using the fiat cover rate from Bitpanda.
+
+                        #testa = float(self.ku_account_balance[y][0])*(float(x["sell"])*float(json_ticker[currency][target_currency]))
+                        #self.ku_waybar_tooltip[y] = [testa]
+                    #print(self.ku_account_balance["DCK"][1])
+
+    def request(self, path):
+        return create_request(session, "https://api.kucoin.com", path, "GET", self)
 
     def sign(self, plain: bytes, key: bytes) -> str:
         hm = hmac.new(key, plain, hashlib.sha256)
@@ -247,11 +287,12 @@ if __name__ == "__main__":
 
     api_key, target_currency, waybar = __init__()
     
-    signer = KuCoin("", "", "")
-
+    #print(signer)
     session = requests.Session()
     bp_data = Bitpanda(session, api_key, target_currency, waybar)
-    ku_data = create_request(session, "https://api.kucoin.com", "/api/v1/accounts/", "GET", signer)
+    ku_data = KuCoin(session, "", "", "")
+    #print(ku_data.json_data)
+    #ku_data = create_request(session, "https://api.kucoin.com", "/api/v1/accounts/", "GET", signer)
     #print(test)
     if waybar == True:
         prepare_waybar_tooltip("Bitpanda", bp_data.total, bp_data.waybar_tooltip, waybar, bp_data.wcs_space, bp_data.wvar_space)
