@@ -8,6 +8,7 @@ import json
 import configparser
 import os
 import sys
+import re
 from urllib.parse import urlencode
 import hmac
 
@@ -16,6 +17,8 @@ total_balance = {}
 total = 0
 debug = False
 currencies = ["USD", "EUR", "GBP", "CHF", "TRY", "PLN", "HUF", "CZK", "SEK", "DKK", "RON", "BGN"]
+stablecoins = [["USDT", "USD"], ["USDC", "USD"], ["DAI", "USD"], ["TUSD", "USD"], ["BUSD", "USD"], ["USDP", "USD"], ["GUSD", "USD"], ["FDUSD", "USD"], ["PYUSD", "USD"], ["EURC", "EUR"], ["EURS", "EUR"], ["sUSD", "USD"], ["FRAX", "USD"], ["FRAXUSD", "USD"], ["USDS", "USD"], ["USDE", "USD"], ["DJED", "USD"], ["RSV", "USD"], ["USD1", "USD"], ["XAUt", "Gold"], ["PAXG", "Gold"], ["aUSD", "USD"], ["nUSD", "USD"], ["CUSD", "USD"], ["LUSD", "USD"], ["MIM", "USD"], ["HUSD", "USD"], ["AGEUR", "EUR"], ["SDAI", "USD"], ["MUSD", "USD"], ["VAI", "USD"], ["USDN", "USD"], ["ALUSD", "USD"], ["XUSD", "USD"]]
+blacklisted_coins = []
 header = {
     "Accept-Encoding": "gzip, deflate, br, zstd",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -206,11 +209,18 @@ def prepare_waybar_tooltip(name, total, waybar_tooltip, waybar, wcs_space, wvar_
             cs_spaces = (wcs_space - len(key)) * " "
             var_spaces = (wvar_space - len(value[0])) * " "
             wstring_tooltip += f'{key}{cs_spaces} : {value[0]} {target_currency}{var_spaces} <span color=\'GreenYellow\' font-family=\'OpenSymbol\'>@</span> {value[1]}\n'
-        output_text = f'₿ : {round(total, 2)} {target_currency}'
-        output_dic = {"text":output_text,"tooltip":wstring_tooltip, "class":name}
-        print(json.dumps(output_dic))
+        #output_text = f'₿ : {round(total, 2)} {target_currency}'
+        return total, wstring_tooltip + "\n"
+        #output_dic = {"text":output_text,"tooltip":wstring_tooltip, "class":name}
+        #print(json.dumps(output_dic))
     else:
         print(f'₿ : {round(total, 2)} {target_currency}')
+
+def print_waybar_tooltip(total, text):
+    output_text = f'₿ : {round(total, 2)} {target_currency}'
+    output_dic = {"text":output_text,"tooltip":text, "class":"Coin_Tracker"}
+    print(json.dumps(output_dic))
+
 
 class KuCoin:
     def __init__(self, session, api_key: str, api_secret: str, api_passphrase: str):
@@ -234,28 +244,55 @@ class KuCoin:
     def fetch_account_balance(self):
         json_account_data = self.request("/api/v1/accounts/")
         for x in json_account_data["data"]:
-            if int(x["balance"]) > 0:
+            if float(x["balance"]) > 0:
                 self.ku_account_balance[x["currency"]] = [x["balance"]]
 
     def compare_ticker_with_account_balance(self):
         json_ticker_data = self.request("/api/v1/market/allTickers")
+        self.ku_waybar_tooltip = {}
+        self.ku_total = 0
         for y in self.ku_account_balance.keys():
+            sc_found = False
+            for yx in stablecoins:
+                if y in yx[0]:
+                    self.ku_account_balance[y].append(["STABLECOIN", yx[1]])
+                    sc_found = True 
+                    break
+            
+            if sc_found == True:
+                target_ticker = float(json_ticker[x[1]][target_currency])
+                target_total = float(self.ku_account_balance[y][0])*float(target_ticker)
+                self.ku_waybar_tooltip[y] = [str("%.2f" % round(target_total, 2)), str(target_ticker)]
+                self.ku_total += target_total
+                continue
+
+            ku_asset_volume = 0
             for x in json_ticker_data["data"]["ticker"]:
-                if y in x["symbol"]:
+                if re.match(rf"^{y}-", x["symbol"]):
                     for z in currencies:
                         if z in x["symbol"]:
                             currency = z
-                    else:
-                        if "BTC" in x["symbol"]:
-                            currency = "BTC"
                     if currency:
-                        self.ku_account_balance[y].append(f'[{x["symbol"]}, {currency}, {x["sell"]}, {x["vol"]}]')
-        
-        #There are multiple tickers; we fetch those with the highest volume. Initially, we convert the ticker currency using the fiat cover rate from Bitpanda.
+                        tmp_volume = float(float(x["sell"])*float(x["vol"]))
+                        self.ku_account_balance[y].append([x["symbol"], currency, x["sell"], x["vol"], tmp_volume])
+                        if tmp_volume > ku_asset_volume:
+                            ku_asset_volume = float(float(x["sell"])*float(x["vol"]))
+            
+            
+            if 0 != ku_asset_volume:
+                for x in self.ku_account_balance[y][1:]:
+                    if x[4] == ku_asset_volume:
+                        target_ticker = float(x[2])*float(json_ticker[x[1]][target_currency])
+                        target_total = float(self.ku_account_balance[y][0])*float(target_ticker)
+                        self.ku_waybar_tooltip[y] = [str("%.2f" % round(target_total, 2)) ,str(round(target_ticker, 4))] 
+                        self.ku_total += target_total
+                        #print(x)
 
-                        #testa = float(self.ku_account_balance[y][0])*(float(x["sell"])*float(json_ticker[currency][target_currency]))
-                        #self.ku_waybar_tooltip[y] = [testa]
-                    #print(self.ku_account_balance["DCK"][1])
+        #self.convert_account_balance = {}
+        #for key, value in self.ku_account_balance.items():
+        #    print(value[1][2])
+        #    print(json_ticker[value[1][1]][target_currency])
+        #    self.ku_account_balance[key] = float(value[1][2])*float(json_ticker[value[1][1]][target_currency])
 
     def request(self, path):
         return create_request(session, "https://api.kucoin.com", path, "GET", self)
@@ -287,6 +324,7 @@ if __name__ == "__main__":
 
     api_key, target_currency, waybar = __init__()
     
+    #signer = KuCoin("687ff1a9dffe710001e65ce3", "35106d0f-02ec-4356-b840-532b4cd0e7b2", "Ue.E$\\gT)\\i&vS[os\\ln")
     #print(signer)
     session = requests.Session()
     bp_data = Bitpanda(session, api_key, target_currency, waybar)
@@ -295,5 +333,7 @@ if __name__ == "__main__":
     #ku_data = create_request(session, "https://api.kucoin.com", "/api/v1/accounts/", "GET", signer)
     #print(test)
     if waybar == True:
-        prepare_waybar_tooltip("Bitpanda", bp_data.total, bp_data.waybar_tooltip, waybar, bp_data.wcs_space, bp_data.wvar_space)
+        bit_total, bitpanda_tooltip = prepare_waybar_tooltip("Bitpanda", bp_data.total, bp_data.waybar_tooltip, waybar, bp_data.wcs_space, bp_data.wvar_space)
+        ku_total, kucoin_tooltip = prepare_waybar_tooltip("KuCoin", round(ku_data.ku_total, 2), ku_data.ku_waybar_tooltip, waybar, bp_data.wcs_space, bp_data.wvar_space)
+        print_waybar_tooltip(bit_total + ku_total, bitpanda_tooltip + kucoin_tooltip)
 
