@@ -13,95 +13,156 @@ from urllib.parse import urlencode
 import hmac
 
 
+debug = False
 total_balance = {}
 total = 0
+
 debug = False
 currencies = ["USD", "EUR", "GBP", "CHF", "TRY", "PLN", "HUF", "CZK", "SEK", "DKK", "RON", "BGN"]
 stablecoins = [["USDT", "USD"], ["USDC", "USD"], ["DAI", "USD"], ["TUSD", "USD"], ["BUSD", "USD"], ["USDP", "USD"], ["GUSD", "USD"], ["FDUSD", "USD"], ["PYUSD", "USD"], ["EURC", "EUR"], ["EURS", "EUR"], ["sUSD", "USD"], ["FRAX", "USD"], ["FRAXUSD", "USD"], ["USDS", "USD"], ["USDE", "USD"], ["DJED", "USD"], ["RSV", "USD"], ["USD1", "USD"], ["XAUt", "Gold"], ["PAXG", "Gold"], ["aUSD", "USD"], ["nUSD", "USD"], ["CUSD", "USD"], ["LUSD", "USD"], ["MIM", "USD"], ["HUSD", "USD"], ["AGEUR", "EUR"], ["SDAI", "USD"], ["MUSD", "USD"], ["VAI", "USD"], ["USDN", "USD"], ["ALUSD", "USD"], ["XUSD", "USD"]]
-blacklisted_coins = []
 header = {
     "Accept-Encoding": "gzip, deflate, br, zstd",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
     }
+wcs_space = 0
+wvar_space = 0
 
-def __init__():
-    ram_access = False
+def initialize():
     config = configparser.ConfigParser()
-    config_path = os.getcwd() + "/config_bitpanda.ini"
-    if os.path.isfile("/dev/shm/config_bitpanda.ini") == True:
-        ram_access = True
+    config_path = os.getcwd() + "/config_cointicker.ini"
+    if os.path.isfile("/dev/shm/config_cointicker.ini") == True:
+        config.read("/dev/shm/config_cointicker.ini")
     else:
-        import shutil
-        if os.path.isfile(config_path) == False: 
-            print("Setup Bitpanda Configuration\n")
-            api_key = str(input("API-KEY: "))
-            if not api_key:
-                print("Error: Invalid input.")
-                exit()
-            count = 1
-            for x in range(0, 3):
-                print(f"Available currencies: {currencies}")
-                target_currency = str(input("Set your target currency: ").upper())
-                if target_currency in currencies:
-                    break
-                else:
-                    print("Invalid currency. Please try again.")
-            else:
-                exit()
-    
-            for x in range(0, 3):
-                waybar_ask = str(input("Enable Waybar specific json output? [Yes/No]: "))
-                if "yes" in waybar_ask.lower():
-                    waybar = True
-                    break
-                elif "no" in waybar_ask.lower():
-                    waybar = False
-                    break
-                else:
-                    print("Invalid input. Please try again.")
-            else:
-                exit()
-            
-            config['DEFAULT'] = {"api_key": api_key,
-                            "target_currency": target_currency,
-                            "waybar": waybar}
-            with open('config_bitpanda.ini', 'w') as configfile:
-                config.write(configfile)
-                print(f"Configuration file has been written to: {os.getcwd()}/config_bitpanda.ini")
-            try:
-                shutil.copy(os.getcwd() + "/config_bitpanda.ini", "/dev/shm/config_bitpanda.ini")
-            except:
-                pass
-        
+        if os.path.isfile(config_path) == True:
+            config.read(config_path)
+            ram_access = config["Global"]["ram_access"]
+            if ram_access == True:
+                import shutil
+                shutil.copy(config_path, "/dev/shm/config_cointicker.ini")
         else:
-            shutil.copy(config_path, "/dev/shm/config_bitpanda.ini")
+            print("You should set up Cointicker with init at first.")
+            exit()
 
-    if ram_access == True:
-        config.read("/dev/shm/config_bitpanda.ini")
-    else:
-        config.read(config_path)
-        
-    api_key = config['DEFAULT']['api_key']
-    target_currency = config['DEFAULT']['target_currency']
-    waybar = config['DEFAULT']['waybar']
-    header["X-Api-Key"] = api_key
+    #Load Bitpanda API Credentials
+    bp_api_key = config['Bitpanda']['api_key']
+
+    # Load KuCoin API Credentials
+    ku_api_key = config['KuCoin']['api_key']
+    ku_secret = config['KuCoin']['secret_key']
+    ku_passphrase = config['KuCoin']['passphrase']
+    target_currency = config['Global']['target_currency']
+    show_total = config['Waybar']['show_total']
+    waybar_text = config['Waybar']['text']
+
+    waybar = config['Global']['waybar']
+    header["X-Api-Key"] = bp_api_key
     
-    return [str(api_key), str(target_currency), bool(waybar)]
+    return [bp_api_key, ku_api_key, ku_secret, ku_passphrase, target_currency, bool(waybar), waybar_text, show_total]
+
+
+def qinput(text, count):
+    for x in range(0, count):
+        out = input(text)
+        if "yes" in out.lower():
+            return True
+        elif "no" in out.lower():
+            return False
+        else:
+            print("Try it again with Yes or No.")
+    else:
+        print("Try it next time ~ bye")
+        exit()
+
+def configure():
+    
+    config = configparser.ConfigParser()
+    config_path = os.getcwd() + "/config_cointicker.ini"
+
+    print("Welcome to CoinTicker !")
+    print("(For the best experience, use it with Waybar.)\n")
+    ask_bp = qinput("Do you want to set up Bitpanda? [Yes/No] ", 3) 
+    if ask_bp == True:
+        bt_api_key = str(input("API-KEY: "))
+
+    ask_ku = qinput("Do you want to set up KuCoin? [Yes/No] ", 3) 
+    if ask_ku == True:
+        ku_api_key = str(input("API-KEY: "))
+        ku_secret = str(input("Secret: "))
+        ku_pass = str(input("Passphrase: "))
+
+    print(f"Available currencies: {currencies}")        
+    for x in range(0, 3):
+        target_currency = str(input("Chose your currency: ").upper())
+        if target_currency in currencies:
+            break
+        else:
+            print("Invalid currency. Please try again.")
+    else:
+        exit()
+
+    waybar_ask = qinput("Enable Waybar specific json output? [Yes/No]: " , 3)
+    if waybar_ask == True:
+        waybar = True
+    elif waybar_ask == False:
+        waybar = False
+
+    if waybar == True:
+        print("Print total of your Portfolio in you Waybar? [Yes/No] \n(The total amount appears when you hover the course over the module)")
+        show_total = qinput("", 3)
+    
+        config['Bitpanda'] = {"api_key": bt_api_key,}
+        config['KuCoin'] = {"api_key": ku_api_key, "secret_key": ku_secret, "passphrase": ku_pass}
+        config["Global"] = {"waybar": waybar, "target_currency": target_currency}
+        config['Waybar'] = {"text": " ₿ ", "show_total": show_total}
+
+        if os.path.isdir("/dev/shm/") == True:
+            import shutil
+            config["Global"] = {"ram_access": True}
+            shutil.copy(os.getcwd() + "/config_cointicker.ini", "/dev/shm/config_cointicker.ini")
+        else:
+            config["Global"] = {"ram_access": False}
+
+        with open('config_cointicker.ini', 'w') as configfile:
+            config.write(configfile)
+            print(f"Configuration written to: {os.getcwd()}/config_cointicker.ini")
+            print("(Reuse this file for future changes or run init again.)")   
 
 def reset():
-    if os.path.isfile("/dev/shm/config_bitpanda.ini") == True:
-        os.remove("/dev/shm/config_bitpanda.ini")
-    if os.path.isfile(os.getcwd() + "/config_bitpanda.ini") == True:
-        os.remove(os.getcwd() + "/config_bitpanda.ini")        
+    if os.path.isfile("/dev/shm/config_cointicker.ini") == True:
+        os.remove("/dev/shm/config_cointicker.ini")
+    if os.path.isfile(os.getcwd() + "/config_cointicker.ini") == True:
+        os.remove(os.getcwd() + "/config_cointicker.ini")        
 
     print("Done")
     exit()
 
 def update():
     import shutil
-    shutil.copy(os.getcwd() + "/config_bitpanda.ini", "/dev/shm/config_bitpanda.ini")
+    shutil.copy(os.getcwd() + "/config_cointicker.ini", "/dev/shm/config_cointicker.ini")
     print("Done")
     exit()
+
+def prepare_waybar_tooltip(name, total, waybar_tooltip, waybar, wcs_space, wvar_space):
+    if waybar == True:
+        title_space = (int(wcs_space) + int(wvar_space) - 10) * " "
+        wstring_tooltip = "<b>" + name + "</b>" + title_space + "<i><span color=\'gray\' rise=\'-1000\'>Total: " + str(round(total, 2)) + " " + target_currency + "</span></i>\n\n"
+        sorted_waybar_tooltip = dict(sorted(waybar_tooltip.items(), key=lambda item: float(item[1][0]), reverse=True))
+        for key, value in sorted_waybar_tooltip.items():
+            cs_spaces = (wcs_space - len(key)) * " "
+            var_spaces = (wvar_space - len(value[0])) * " "
+            wstring_tooltip += f'{key}{cs_spaces} : {value[0]} {target_currency}{var_spaces} <span color=\'GreenYellow\' font-family=\'OpenSymbol\'>@</span> {value[1]}\n'
+        return total, wstring_tooltip + "\n"
+    else:
+        print(f'₿ : {round(total, 2)} {target_currency}')
+
+def print_waybar_tooltip(total, text, waybar_text, show_total):
+    if show_total == True:
+        output_text = f'{waybar_text} {round(total, 2)} {target_currency}'
+    else:
+        output_text = waybar_text
+        text += "<b>Total </b>:: <span color=\'gold\'><b>" + str("%.2f" % round(total, 2)) + " " + target_currency + "</b></span>"
+    output_dic = {"text":output_text,"tooltip":text, "class":"Coin_Tracker"}
+    print(json.dumps(output_dic))
 
 
 def create_request(session, endpoint, path, method, exchanger = ""):
@@ -123,8 +184,7 @@ def create_request(session, endpoint, path, method, exchanger = ""):
 
 class Bitpanda:
     def __init__(self, session, api_key, target_currency, waybar):
-        global json_ticker
-        total_balance = {}
+        global json_ticker, wcs_space, wvar_space
         self.total = 0
         json_asset_wallet = create_request(session, "https://api.bitpanda.com", "/v1/asset-wallets", "GET", "Bitpanda")
         json_fiat_wallet = create_request(session, "https://api.bitpanda.com", "/v1/fiatwallets", "GET", "Bitpanda")
@@ -134,8 +194,6 @@ class Bitpanda:
         self.parse_asset_wallet(json_asset_wallet, total_balance)
         
         self.waybar_tooltip = {}
-        self.wcs_space = 0
-        self.wvar_space = 0
 
         for k, v in total_balance.items():
             if v:
@@ -147,10 +205,10 @@ class Bitpanda:
                             print(f'{kx}:{float(vx) * float(exchange_rate)}')
                         if waybar == True:
                             self.waybar_tooltip[kx] = ["%.2f" % round(float(vx) * float(exchange_rate), 2), exchange_rate]
-                            if len(kx) > self.wcs_space:
-                                self.wcs_space = len(kx)
-                            if len(self.waybar_tooltip[kx][0]) > self.wvar_space:
-                                self.wvar_space = len(self.waybar_tooltip[kx][0])
+                            if len(kx) > wcs_space:
+                                wcs_space = len(kx)
+                            if len(self.waybar_tooltip[kx][0]) > wvar_space:
+                                wvar_space = len(self.waybar_tooltip[kx][0])
                     except:
                         print(f"Error: „{target_currency}\" currency not available.")
                         exit()
@@ -198,29 +256,6 @@ class Bitpanda:
                     for x in v[y]["attributes"]["wallets"]:
                         if float(x["attributes"]["balance"]) != 0.0 and v:
                             total_balance[k][x["attributes"]["cryptocoin_symbol"]] = x["attributes"]["balance"]
-
-
-def prepare_waybar_tooltip(name, total, waybar_tooltip, waybar, wcs_space, wvar_space):
-    if waybar == True:
-        title_space = (int(wcs_space) + int(wvar_space) - 10) * " "
-        wstring_tooltip = "<b>" + name + "</b>" + title_space + "<i><span color=\'gray\' rise=\'-1000\'>Total: " + str(round(total, 2)) + " " + target_currency + "</span></i>\n\n"
-        sorted_waybar_tooltip = dict(sorted(waybar_tooltip.items(), key=lambda item: float(item[1][0]), reverse=True))
-        for key, value in sorted_waybar_tooltip.items():
-            cs_spaces = (wcs_space - len(key)) * " "
-            var_spaces = (wvar_space - len(value[0])) * " "
-            wstring_tooltip += f'{key}{cs_spaces} : {value[0]} {target_currency}{var_spaces} <span color=\'GreenYellow\' font-family=\'OpenSymbol\'>@</span> {value[1]}\n'
-        #output_text = f'₿ : {round(total, 2)} {target_currency}'
-        return total, wstring_tooltip + "\n"
-        #output_dic = {"text":output_text,"tooltip":wstring_tooltip, "class":name}
-        #print(json.dumps(output_dic))
-    else:
-        print(f'₿ : {round(total, 2)} {target_currency}')
-
-def print_waybar_tooltip(total, text):
-    output_text = f'₿ : {round(total, 2)} {target_currency}'
-    output_dic = {"text":output_text,"tooltip":text, "class":"Coin_Tracker"}
-    print(json.dumps(output_dic))
-
 
 class KuCoin:
     def __init__(self, session, api_key: str, api_secret: str, api_passphrase: str):
@@ -278,21 +313,14 @@ class KuCoin:
                         if tmp_volume > ku_asset_volume:
                             ku_asset_volume = float(float(x["sell"])*float(x["vol"]))
             
-            
             if 0 != ku_asset_volume:
                 for x in self.ku_account_balance[y][1:]:
                     if x[4] == ku_asset_volume:
+                        len_ticker = len(x[2])
                         target_ticker = float(x[2])*float(json_ticker[x[1]][target_currency])
                         target_total = float(self.ku_account_balance[y][0])*float(target_ticker)
-                        self.ku_waybar_tooltip[y] = [str("%.2f" % round(target_total, 2)) ,str(round(target_ticker, 4))] 
+                        self.ku_waybar_tooltip[y] = [str("%.2f" % round(target_total, 2)) ,str(round(target_ticker, len_ticker-2))] 
                         self.ku_total += target_total
-                        #print(x)
-
-        #self.convert_account_balance = {}
-        #for key, value in self.ku_account_balance.items():
-        #    print(value[1][2])
-        #    print(json_ticker[value[1][1]][target_currency])
-        #    self.ku_account_balance[key] = float(value[1][2])*float(json_ticker[value[1][1]][target_currency])
 
     def request(self, path):
         return create_request(session, "https://api.kucoin.com", path, "GET", self)
@@ -321,19 +349,19 @@ if __name__ == "__main__":
             reset()
         elif sys.argv[1].lower() == "update":
             update()
+        elif sys.argv[1].lower() == "init":
+            configure()
 
-    api_key, target_currency, waybar = __init__()
-    
-    #signer = KuCoin("687ff1a9dffe710001e65ce3", "35106d0f-02ec-4356-b840-532b4cd0e7b2", "Ue.E$\\gT)\\i&vS[os\\ln")
-    #print(signer)
+    bp_api_key, ku_api_key, ku_secret, ku_passphrase, target_currency, waybar, waybar_text, show_total = initialize()
     session = requests.Session()
-    bp_data = Bitpanda(session, api_key, target_currency, waybar)
-    ku_data = KuCoin(session, "", "", "")
-    #print(ku_data.json_data)
-    #ku_data = create_request(session, "https://api.kucoin.com", "/api/v1/accounts/", "GET", signer)
-    #print(test)
-    if waybar == True:
-        bit_total, bitpanda_tooltip = prepare_waybar_tooltip("Bitpanda", bp_data.total, bp_data.waybar_tooltip, waybar, bp_data.wcs_space, bp_data.wvar_space)
-        ku_total, kucoin_tooltip = prepare_waybar_tooltip("KuCoin", round(ku_data.ku_total, 2), ku_data.ku_waybar_tooltip, waybar, bp_data.wcs_space, bp_data.wvar_space)
-        print_waybar_tooltip(bit_total + ku_total, bitpanda_tooltip + kucoin_tooltip)
+    bp_data = Bitpanda(session, bp_api_key, target_currency, waybar)
+    ku_data = KuCoin(session, ku_api_key, ku_secret, ku_passphrase)
 
+    if waybar == True:
+        bit_total, bitpanda_tooltip = prepare_waybar_tooltip("Bitpanda", bp_data.total, bp_data.waybar_tooltip, waybar, wcs_space, wvar_space)
+        ku_total, kucoin_tooltip = prepare_waybar_tooltip("KuCoin", round(ku_data.ku_total, 2), ku_data.ku_waybar_tooltip, waybar, wcs_space, wvar_space)
+        if bit_total > ku_total:
+            print_waybar_tooltip(bit_total + ku_total, bitpanda_tooltip + kucoin_tooltip, waybar_text, show_total)
+        else:
+            print_waybar_tooltip(ku_total + bit_total, kucoin_tooltip + bitpanda_tooltip, waybar_text, show_total)
+ 
