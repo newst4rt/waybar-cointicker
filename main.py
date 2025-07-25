@@ -41,13 +41,13 @@ def initialize():
     #Load Bitpanda API Credentials
     bp_cred = []
     bp_cred.append(config['Bitpanda']['active'])
-    if bool(bp_cred[0]) == True:
+    if bp_cred[0].lower() == "true":
         bp_cred.append(config['Bitpanda']['api_key'])
 
     
     ku_cred = []
     ku_cred.append(config['KuCoin']['active'])
-    if bool(ku_cred[0]) == True:
+    if ku_cred[0].lower() == "true":
     # Load KuCoin API Credentials
         ku_cred.append(config['KuCoin']['api_key'])
         ku_cred.append(config['KuCoin']['secret_key'])
@@ -177,7 +177,7 @@ def create_request(session, endpoint, path, method, exchanger):
     request = requests.Request(method=method, url=full_path).prepare()
     
     if isinstance(exchanger, Bitpanda):
-        headers = Bitpanda.headers("Bitpanda")
+        headers = exchanger.headers()
 
     if isinstance(exchanger, KuCoin):
         payload = method + raw_url
@@ -258,7 +258,6 @@ class Bitpanda:
             if k == "cryptocoin":
                 for x in v["attributes"]["wallets"]:
                     if float(x["attributes"]["balance"]) != 0.0 and v:
-                        #print(float(x["attributes"]["balance"]))
                         total_balance[k][x["attributes"]["cryptocoin_symbol"]] = x["attributes"]["balance"]
             if k == "commodity":
                 for x in v["metal"]["attributes"]["wallets"]:
@@ -292,7 +291,6 @@ class KuCoin:
 
         if api_passphrase and api_secret:
             self.api_passphrase = self.sign(api_passphrase.encode('utf-8'), api_secret.encode('utf-8'))
-            #self.json_data = create_request(session, "https://api.kucoin.com", "/api/v1/accounts/", "GET", self)
             self.fetch_account_balance()
             self.compare_ticker_with_account_balance()
 
@@ -397,5 +395,4 @@ if __name__ == "__main__":
 
     if waybar == True:
         print_waybar_tooltip(ex_data, waybar_text, show_total)
-        #print_waybar_tooltip(ku_total + bp_total, kucoin_tooltip + bp_tooltip, waybar_text, show_total)
 
