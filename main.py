@@ -172,8 +172,8 @@ def print_waybar_tooltip(ex_data, waybar_text, show_total):
 
 
 def create_request(session, endpoint, path, method, exchanger):
-    full_path = f"{endpoint}{path}?{urlencode}"
-    raw_url = f"{path}?{urlencode}"
+    full_path = f"{endpoint}{path}"
+    raw_url = f"{path}"
     request = requests.Request(method=method, url=full_path).prepare()
     
     if isinstance(exchanger, Bitpanda):
@@ -281,7 +281,8 @@ class KuCoin:
         self.api_key = api_key or ""
         self.api_secret = api_secret or ""
         self.api_passphrase = api_passphrase or ""
-        self.ku_account_balance = {}
+        self.ku_spot_balance = {}
+        self.ku_future_balance = {}
         self.ku_waybar_tooltip = {}
 
         if "json_ticker" not in globals():
@@ -292,55 +293,79 @@ class KuCoin:
         if api_passphrase and api_secret:
             self.api_passphrase = self.sign(api_passphrase.encode('utf-8'), api_secret.encode('utf-8'))
             self.fetch_account_balance()
-            self.compare_ticker_with_account_balance()
+            self.compare_tickers_with_account_balance()
 
         if not all([api_key, api_secret, api_passphrase]):
             print("API token is empty. Access is restricted to public interfaces only.")
 
-    
     def fetch_account_balance(self):
-        json_account_data = self.request("/api/v1/accounts/")
-        for x in json_account_data["data"]:
+        json_spot_data = self.request("/api/v1/accounts/")
+        json_future_data = self.request("/api/v1/orders", "https://api-futures.kucoin.com")
+        for x in json_spot_data["data"]:
             if float(x["balance"]) > 0:
-                self.ku_account_balance[x["currency"]] = [x["balance"]]
+                self.ku_spot_balance[x["currency"]] = [x["balance"]]
 
-    def compare_ticker_with_account_balance(self,  ):
-        json_ticker_data = self.request("/api/v1/market/allTickers")
+        if int(json_future_data["data"]["totalNum"]) > 0:
+            for x in range(0, len(json_future_data["data"]["items"])):
+                future_symbol = json_future_data["data"]["items"][x]["symbol"]
+                if self.ku_future_balance.get(future_symbol) == None:
+                    future_details = self.request('/api/v1/position?' + urlencode({"symbol":future_symbol}), "https://api-futures.kucoin.com")
+                    future_total = float(future_details["data"]["posInit"]) - float(future_details["data"]["unrealisedPnl"])*-1 - float(future_details["data"]["posMaint"])
+                    self.ku_future_balance[future_symbol] = [future_total, "x" + str(future_details["data"]["leverage"]), future_details["data"]["markPrice"]]
+                
+    def compare_tickers_with_account_balance(self):
         self.ku_waybar_tooltip = {}
         self.ku_total = 0
-        for y in self.ku_account_balance.keys():
+
+        if self.ku_spot_balance:
+            self.compare_tickers_with_spot_balance()
+
+        if self.ku_future_balance:    
+            self.compare_tickers_with_future_balance()
+
+    def compare_tickers_with_future_balance(self):
+        for key, value in self.ku_future_balance.items():
+            self.ku_waybar_tooltip[key] = [str(round(float(value[0])*float(json_ticker["USD"][target_currency]), 2)), round(float(value[2])*float(json_ticker["USD"][target_currency]), 6)]
+            if len(key) > w_space[0]:
+                w_space[0] = len(key)
+            if len(self.ku_waybar_tooltip[key][0]) > w_space[1]:
+                w_space[1] = len(self.ku_waybar_tooltip[key][0])
+
+    def compare_tickers_with_spot_balance(self):
+        json_spot_tickers = self.request("/api/v1/market/allTickers")
+        for y in self.ku_spot_balance.keys():
             sc_found = False
             for yx in stablecoins:
                 if y in yx[0]:
-                    self.ku_account_balance[y].append(["STABLECOIN", yx[1]])
+                    self.ku_spot_balance[y].append(["STABLECOIN", yx[1]])
                     sc_found = True 
                     break
             
             if sc_found == True:
                 target_ticker = float(json_ticker[x[1]][target_currency])
-                target_total = float(self.ku_account_balance[y][0])*float(target_ticker)
+                target_total = float(self.ku_spot_balance[y][0])*float(target_ticker)
                 self.ku_waybar_tooltip[y] = [str("%.2f" % round(target_total, 2)), str(target_ticker)]
                 self.ku_total += target_total
                 continue
 
             ku_asset_volume = 0
-            for x in json_ticker_data["data"]["ticker"]:
+            for x in json_spot_tickers["data"]["ticker"]:
                 if re.match(rf"^{y}-", x["symbol"]):
                     for z in currencies:
                         if z in x["symbol"]:
                             currency = z
                     if currency:
                         tmp_volume = float(float(x["sell"])*float(x["vol"]))
-                        self.ku_account_balance[y].append([x["symbol"], currency, x["sell"], x["vol"], tmp_volume])
+                        self.ku_spot_balance[y].append([x["symbol"], currency, x["sell"], x["vol"], tmp_volume])
                         if tmp_volume > ku_asset_volume:
                             ku_asset_volume = float(float(x["sell"])*float(x["vol"]))
             
             if 0 != ku_asset_volume:
-                for x in self.ku_account_balance[y][1:]:
+                for x in self.ku_spot_balance[y][1:]:
                     if x[4] == ku_asset_volume:
                         len_ticker = len(x[2])
                         target_ticker = float(x[2])*float(json_ticker[x[1]][target_currency])
-                        target_total = float(self.ku_account_balance[y][0])*float(target_ticker)
+                        target_total = float(self.ku_spot_balance[y][0])*float(target_ticker)
                         self.ku_waybar_tooltip[y] = [str("%.2f" % round(target_total, 2)) ,str(round(target_ticker, len_ticker-2))] 
                         if len(y) > w_space[0]:
                             w_space[0] = len(y)
@@ -348,8 +373,8 @@ class KuCoin:
                             w_space[1] = len(self.ku_waybar_tooltip[y][0])
                         self.ku_total += target_total
 
-    def request(self, path: str):
-        return create_request(session, "https://api.kucoin.com", path, "GET", self)
+    def request(self, path: str, endpoint = "https://api.kucoin.com"):
+        return create_request(session, endpoint, path, "GET", self)
 
     def sign(self, plain: bytes, key: bytes) -> str:
         hm = hmac.new(key, plain, hashlib.sha256)
