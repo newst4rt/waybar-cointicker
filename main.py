@@ -307,12 +307,13 @@ class KuCoin:
 
         if int(json_future_data["data"]["totalNum"]) > 0:
             for x in range(0, len(json_future_data["data"]["items"])):
-                future_symbol = json_future_data["data"]["items"][x]["symbol"]
-                if self.ku_future_balance.get(future_symbol) == None:
-                    future_details = self.request('/api/v1/position?' + urlencode({"symbol":future_symbol}), "https://api-futures.kucoin.com")
-                    future_total = float(future_details["data"]["posInit"]) - float(future_details["data"]["unrealisedPnl"])*-1 - float(future_details["data"]["posMaint"])
-                    self.ku_future_balance[future_symbol] = [future_total, "x" + str(future_details["data"]["leverage"]), future_details["data"]["markPrice"]]
-                
+                if "done" not in json_future_data["data"]["items"][x]["status"]:
+                    future_symbol = json_future_data["data"]["items"][x]["symbol"]
+                    if self.ku_future_balance.get(future_symbol) == None:
+                        future_details = self.request('/api/v1/position?' + urlencode({"symbol":future_symbol}), "https://api-futures.kucoin.com")
+                        future_total = float(future_details["data"]["posInit"]) - float(future_details["data"]["unrealisedPnl"])*-1 - float(future_details["data"]["posMaint"])
+                        self.ku_future_balance[future_symbol] = [future_total, "x" + str(future_details["data"]["leverage"]), future_details["data"]["markPrice"]]
+                    
     def compare_tickers_with_account_balance(self):
         self.ku_waybar_tooltip = {}
         self.ku_total = 0
