@@ -24,7 +24,7 @@ w_space = [0, 0]
 
 def initialize():
     config = configparser.ConfigParser()
-    config_path = os.getcwd() + "/config_cointicker.ini"
+    config_path = os.path.dirname(os.path.realpath(__file__)) + "/config_cointicker.ini"
     if os.path.isfile("/dev/shm/config_cointicker.ini") == True:
         config.read("/dev/shm/config_cointicker.ini")
     else:
