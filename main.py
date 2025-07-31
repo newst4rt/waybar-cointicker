@@ -79,7 +79,6 @@ def qinput(text, count):
 def configure():
     
     config = configparser.ConfigParser()
-    config_path = os.getcwd() + "/config_cointicker.ini"
 
     print("Welcome to CoinTicker !")
     print("(For the best experience, use it with Waybar.)\n")
@@ -275,7 +274,6 @@ class Bitpanda:
 
 class KuCoin:
     def __init__(self, session, api_key: str, api_secret: str, api_passphrase: str):
-        
         # ref https://www.kucoin.com/docs-new/authentication
         self.session = session or ""
         self.api_key = api_key or ""
